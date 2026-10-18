@@ -30,6 +30,8 @@ def main():
 
     print(f"\n[1/3] Khoi tao ma nguon va dong goi ban cap nhat...")
     run_cmd(["git", "init"])
+    run_cmd(["git", "config", "user.name", "Developer"])
+    run_cmd(["git", "config", "user.email", "dev@local.internal"])
     run_cmd(["git", "branch", "-M", "main"])
     run_cmd(["git", "add", "."])
     run_cmd(["git", "commit", "-m", "Deploy Jio Gemini Scanner Cloud"])
@@ -41,7 +43,6 @@ def main():
     fail_count = 0
 
     for idx, repo_url in enumerate(repos, 1):
-        # Format repo url (neu thieu .git thi bo sung)
         clean_url = repo_url.strip()
         if not clean_url.endswith(".git") and "github.com" in clean_url:
             clean_url += ".git"
@@ -58,7 +59,6 @@ def main():
         else:
             print(f"   => [THAT BAI]")
             if err:
-                # In ra loi ngan gon
                 for line in err.splitlines()[-3:]:
                     print(f"      {line}")
             fail_count += 1
