@@ -1,5 +1,5 @@
-https://oauth2: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@github.com/baoanh200637-arch/GEMINI.git
-https://oauth2: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@github.com/vananhyyy3-glitch/GEMINI.git
-https://oauth2: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@github.com/bashopee2-droid/GEMINI.git
-https://oauth2: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@github.com/anhv98635-lab/GEMINI.git
-https://oauth2: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@github.com/baoanh2000xx-blip/GEMINI.git
+https://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@github.com/vananhyyy3-glitch/GEMINI.git
+https://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@github.com/bashopee2-droid/GEMINI.git
+https://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@github.com/baoanh200637-arch/GEMINI.git
+https://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@github.com/baoanh2000xx-blip/GEMINI.git
+https://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@github.com/anhv98635-lab/GEMINI.git
