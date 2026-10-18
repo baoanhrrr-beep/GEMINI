@@ -1,0 +1,2 @@
+bridge=6804
+scanner=20380

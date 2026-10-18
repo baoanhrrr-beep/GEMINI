@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', sans-serif; }
+
+    body {
+      width: 280px;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      padding: 16px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .header-icon { font-size: 20px; }
+    .header-title { font-size: 14px; font-weight: 600; color: #fff; }
+    .header-ver { font-size: 10px; color: #555; margin-left: auto; }
+
+    /* Status row */
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .status-label { color: #888; }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 5px;
+    }
+    .dot.on  { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+    .dot.off { background: #555; }
+    .dot.loading { background: #f59e0b; animation: pulse 1s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Main control button */
+    .btn-main {
+      width: 100%;
+      padding: 11px;
+      border: none;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      margin-top: 4px;
+      letter-spacing: 0.3px;
+    }
+    .btn-start {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: #fff;
+    }
+    .btn-start:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-stop {
+      background: linear-gradient(135deg, #ef4444, #b91c1c);
+      color: #fff;
+    }
+    .btn-stop:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-main:disabled {
+      background: #2a2a2a;
+      color: #555;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Stats */
+    .stats {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .stat-box {
+      flex: 1;
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+    }
+    .stat-num { font-size: 18px; font-weight: 700; color: #fff; }
+    .stat-lbl { font-size: 10px; color: #555; margin-top: 2px; }
+
+    /* Log area */
+    .log {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-top: 10px;
+      font-size: 10px;
+      color: #666;
+      height: 70px;
+      overflow-y: auto;
+      font-family: monospace;
+      line-height: 1.5;
+    }
+    .log .ok  { color: #22c55e; }
+    .log .err { color: #ef4444; }
+    .log .warn { color: #f59e0b; }
+
+    /* Setup warning */
+    .setup-warn {
+      background: #1c1400;
+      border: 1px solid #f59e0b44;
+      border-radius: 8px;
+      padding: 9px 11px;
+      margin-top: 10px;
+      font-size: 11px;
+      color: #f59e0b;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="header-icon">✦</span>
+    <span class="header-title">Gemini Auto Activator</span>
+    <span class="header-ver">v1.3</span>
+  </div>
+
+  <div class="status-row">
+    <span class="status-label">Bridge Server</span>
+    <span id="st-bridge"><span class="dot off"></span>Offline</span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">Jio Scanner</span>
+    <span id="st-scanner"><span class="dot off"></span>Offline</span>
+  </div>
+
+  <button class="btn-main btn-start" id="btn-toggle">▶  Bắt đầu</button>
+
+  <div class="stats">
+    <div class="stat-box">
+      <div class="stat-num" id="stat-links">—</div>
+      <div class="stat-lbl">Links trong queue</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num" id="stat-activated">—</div>
+      <div class="stat-lbl">Đã kích hoạt</div>
+    </div>
+  </div>
+
+  <div class="log" id="log-area">Chờ khởi động...</div>
+
+  <div class="setup-warn" id="setup-warn" style="display:none">
+    ⚠ Chưa cài native host.<br>
+    Chạy <b>setup_native_host.bat</b> một lần rồi reload extension.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

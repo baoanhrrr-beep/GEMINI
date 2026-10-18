@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+screenshots/
+test_link.py
+_patch*
+_new_*
+*.log

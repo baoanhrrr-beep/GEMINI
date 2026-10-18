@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Auto Activator",
+  "version": "1.2",
+  "description": "Auto check and activate Gemini subscription links directly in running profile",
+  "permissions": [
+    "storage",
+    "tabs",
+    "alarms",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Gemini Auto Activator"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://serviceactivation.google.com/*",
+        "*://accounts.google.com/*",
+        "*://one.google.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

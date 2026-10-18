@@ -1,0 +1,9 @@
+{
+  "name": "com.gemini.tool",
+  "description": "Gemini Tool Native Host",
+  "path": "c:\\Users\\k5a3h\\Downloads\\GEMINI jino Tool\\gemini_native_host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://dmpogcfgkkocfmgmondnnfhpalhcehdh/"
+  ]
+}

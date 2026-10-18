@@ -1,0 +1,53 @@
+name: Jio Gemini Scanner Cloud 24/7
+
+on:
+  schedule:
+    # Chay tu dong moi 30 phut 1 lan tren may chu GitHub
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Nut bam "Run workflow" de chay bat cu luc nao bang tay
+
+concurrency:
+  group: gemini-scanner-group
+  cancel-in-progress: false
+
+jobs:
+  run-scanner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: 1. Checkout ma nguon
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 2. Cai dat Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: 3. Cai dat thu vien can thiet
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 4. Chay Jio Gemini Scanner tren Cloud
+        env:
+          MAX_LOOPS: 2  # Chay 2 vong quet lien tuc roi commit ket qua moi ve GitHub
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python jio_gemini_share.py
+
+      - name: 5. Tu dong luu va Commit cac Link moi ve GitHub
+        run: |
+          git config --global user.name "Gemini Cloud Bot"
+          git config --global user.email "bot@github-actions.internal"
+          git add gemini_activation_links.txt gemini_links_fresh.txt gemini_links_used.txt gemini_results.csv 2>/dev/null || true
+          if git status --porcelain | grep -q .; then
+            git commit -m "Auto-update links: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            git push
+            echo "Da cap nhat link moi thanh cong len GitHub!"
+          else
+            echo "Khong co thay doi nao can commit."
+          fi
