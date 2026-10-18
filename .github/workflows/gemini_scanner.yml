@@ -1,19 +1,23 @@
-name: Jio Gemini Scanner Cloud 24/7
+name: Jio Gemini Scanner Cloud 24/7 (Non-Stop)
 
 on:
   schedule:
-    # Chay tu dong moi 30 phut 1 lan tren may chu GitHub
+    # Tu dong bat may chu moi 30 phut de dam bao luon luon chay khong bao gio dung
     - cron: '*/30 * * * *'
-  workflow_dispatch: # Nut bam "Run workflow" de chay bat cu luc nao bang tay
+  workflow_dispatch: # Cho phep bam nut Run workflow bang tay
 
 concurrency:
-  group: gemini-scanner-group
+  group: gemini-cloud-scanner
   cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
 
 jobs:
   run-scanner:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 350
 
     steps:
       - name: 1. Checkout ma nguon
@@ -32,22 +36,36 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 4. Chay Jio Gemini Scanner tren Cloud
+      - name: 4. Cau hinh Git Auto-Commit
+        run: |
+          git config --global user.name "Gemini Cloud Bot"
+          git config --global user.email "bot@github-actions.internal"
+
+      - name: 5. Chay Scanner lien tuc tren Cloud
         env:
-          MAX_LOOPS: 2  # Chay 2 vong quet lien tuc roi commit ket qua moi ve GitHub
+          MAX_RUN_MINUTES: "300"  # Chay lien tuc 5 tieng moi phien
           PYTHONUNBUFFERED: "1"
         run: |
           python jio_gemini_share.py
 
-      - name: 5. Tu dong luu va Commit cac Link moi ve GitHub
+      - name: 6. Day toan bo link moi ve GitHub
+        if: always()
         run: |
-          git config --global user.name "Gemini Cloud Bot"
-          git config --global user.email "bot@github-actions.internal"
           git add gemini_activation_links.txt gemini_links_fresh.txt gemini_links_used.txt gemini_results.csv 2>/dev/null || true
           if git status --porcelain | grep -q .; then
-            git commit -m "Auto-update links: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            git commit -m "Auto-sync links $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             git push
-            echo "Da cap nhat link moi thanh cong len GitHub!"
-          else
-            echo "Khong co thay doi nao can commit."
+            echo "Da day toan bo link moi len GitHub thanh cong!"
           fi
+
+      - name: 7. Tu dong kich hoat phien chay tiep theo (Chay vinh vien 24/7)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Kich hoat phien tiep theo de duy tri 24/7..."
+          curl -s -X POST \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/gemini_scanner.yml/dispatches" \
+            -d '{"ref":"main"}' || true

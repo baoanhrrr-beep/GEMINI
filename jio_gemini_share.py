@@ -1053,6 +1053,16 @@ def save_link(url: str) -> None:
     _append_unique(LINKS_FILE, url)
     _append_unique(LINKS_FRESH_FILE, url)
 
+    # Neu dang chay tren GitHub Actions -> day ngay ve GitHub de may tinh o nha keo ve tuc thi!
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        try:
+            subprocess.run(["git", "add", "gemini_activation_links.txt", "gemini_links_fresh.txt"], capture_output=True)
+            subprocess.run(["git", "commit", "-m", f"Auto-sync new link: {token[:12]}"], capture_output=True)
+            subprocess.run(["git", "push"], capture_output=True)
+            print("   [CLOUD GIT] Da day link moi ve repo thanh cong!")
+        except Exception:
+            pass
+
 def save_result(serial: int | str, device_id: str, mobile: str, status: str, url: str) -> None:
     now = datetime.now(ZoneInfo("Asia/Kathmandu"))
     for _ in range(10):
@@ -1271,11 +1281,16 @@ def main() -> int:
 if __name__ == "__main__":
     import sys
     max_loops_cfg = int(os.environ.get("MAX_LOOPS", "0"))
+    max_run_mins  = int(os.environ.get("MAX_RUN_MINUTES", "0"))
+    t_script_start = time.time()
     loop_count = 0
 
     while True:
         if max_loops_cfg > 0 and loop_count >= max_loops_cfg:
             print(f"\n[CI/CD] Da hoan thanh {loop_count} vong quet theo cau hinh MAX_LOOPS.")
+            break
+        if max_run_mins > 0 and (time.time() - t_script_start) >= max_run_mins * 60:
+            print(f"\n[CI/CD] Da dat thoi gian chay {max_run_mins} phut, ban giao cho phien tiep theo.")
             break
         loop_count += 1
         print("\n" + "#" * 70)
