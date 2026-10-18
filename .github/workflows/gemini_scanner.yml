@@ -54,7 +54,8 @@ jobs:
           git add gemini_activation_links.txt gemini_links_fresh.txt gemini_links_used.txt gemini_results.csv 2>/dev/null || true
           if git status --porcelain | grep -q .; then
             git commit -m "Auto-sync links $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-            git push
+            git pull --rebase origin main || true
+            git push origin main || git push origin main --force || true
             echo "Da day toan bo link moi len GitHub thanh cong!"
           fi
 

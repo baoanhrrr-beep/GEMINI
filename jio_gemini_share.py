@@ -1058,7 +1058,8 @@ def save_link(url: str) -> None:
         try:
             subprocess.run(["git", "add", "gemini_activation_links.txt", "gemini_links_fresh.txt"], capture_output=True)
             subprocess.run(["git", "commit", "-m", f"Auto-sync new link: {token[:12]}"], capture_output=True)
-            subprocess.run(["git", "push"], capture_output=True)
+            subprocess.run(["git", "pull", "--rebase", "origin", "main"], capture_output=True)
+            subprocess.run(["git", "push", "origin", "main"], capture_output=True)
             print("   [CLOUD GIT] Da day link moi ve repo thanh cong!")
         except Exception:
             pass
