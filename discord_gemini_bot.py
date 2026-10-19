@@ -29,6 +29,12 @@ USED_FILE   = TOOL_DIR / "gemini_links_used.txt"
 FRESH_FILE  = TOOL_DIR / "gemini_links_fresh.txt"
 LOG_FILE    = TOOL_DIR / "discord_bot.log"
 
+# ── HTTP Session Pool ──────────────────────────────────────────────────────────
+http_session = req_lib.Session()
+adapter = req_lib.adapters.HTTPAdapter(pool_connections=50, pool_maxsize=50)
+http_session.mount("https://", adapter)
+http_session.mount("http://", adapter)
+
 # ── HTTP Headers ──────────────────────────────────────────────────────────────
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -90,7 +96,7 @@ def log(msg: str):
         f.write(line + "\n")
 
 # ── Link checker ──────────────────────────────────────────────────────────────
-def check_link_status(url: str, timeout: int = 15) -> str:
+def check_link_status(url: str, timeout: int = 4) -> str:
     """
     Returns: 'fresh' | 'expired' | 'used' | 'unknown'
     Uses direct one.google.com/activate/plan/subscription/new/<token> check:
@@ -100,12 +106,12 @@ def check_link_status(url: str, timeout: int = 15) -> str:
     try:
         token = url.strip().rstrip("/").split("/")[-1]
         direct_url = f"https://one.google.com/activate/plan/subscription/new/{token}"
-        r = req_lib.get(direct_url, headers=HEADERS, timeout=timeout, allow_redirects=False)
+        r = http_session.get(direct_url, headers=HEADERS, timeout=timeout, allow_redirects=False)
         if r.status_code in (404, 410):
             return "expired"
         
         # Follow or inspect content
-        r_full = req_lib.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
+        r_full = http_session.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
         body = r_full.text.lower()
         for kw in USED_KW:
             if kw.lower() in body: return "used"
@@ -152,7 +158,7 @@ async def background_scan():
     if is_scanning:
         return
     is_scanning = True
-    log("[SCAN] Bat dau quet link tu dong...")
+    log("[SCAN] Bat dau quet link tu dong (da luong)...")
 
     links = read_links(LINKS_FILE)
     if not links:
@@ -161,16 +167,19 @@ async def background_scan():
         return
 
     fresh, removed = [], []
-    for url in links:
-        status = await asyncio.get_event_loop().run_in_executor(
-            None, check_link_status, url
-        )
-        if status == "fresh":
-            fresh.append(url)
-        elif status in ("expired", "used"):
-            removed.append(url)
-            append_used(url)
-        await asyncio.sleep(1)  # tranh spam request
+    sem = asyncio.Semaphore(25)
+    loop = asyncio.get_event_loop()
+
+    async def scan_single(url: str):
+        async with sem:
+            status = await loop.run_in_executor(None, check_link_status, url, 5)
+            if status == "fresh":
+                fresh.append(url)
+            elif status in ("expired", "used"):
+                removed.append(url)
+                append_used(url)
+
+    await asyncio.gather(*(scan_single(u) for u in links))
 
     # Cap nhat files
     kept = [u for u in links if u not in removed]
@@ -184,7 +193,9 @@ async def background_scan():
 @background_scan.before_loop
 async def before_scan():
     await bot.wait_until_ready()
-    reload_fresh_pool()   # load pool ngay khi khoi dong
+    reload_fresh_pool()
+    # Chờ 30 phút sau khi bot bật mới chạy lần quét tự động đầu tiên (không tự quét ngay khi vừa mở bot)
+    await asyncio.sleep(1800)
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 @bot.command(name="get", aliases=["link", "lay"])
@@ -265,25 +276,51 @@ async def do_quick_scan(ctx):
     is_scanning = True
     links = read_links(LINKS_FILE)
     if not links:
-        await ctx.send("📭 Không có link nào trong file.")
+        await ctx.send("📭 Không có link nào trong kho để quét.")
         is_scanning = False
         return
 
-    msg = await ctx.send(f"⏳ Đang quét `{len(links)}` links...")
+    total = len(links)
+    msg = await ctx.send(f"⚡ Đang bắt đầu quét đa luồng siêu tốc `{total}` links...")
     fresh, removed = [], []
+    done_count = 0
+    scan_done = False
 
-    for i, url in enumerate(links):
-        status = await asyncio.get_event_loop().run_in_executor(
-            None, check_link_status, url
-        )
-        if status == "fresh":
-            fresh.append(url)
-        elif status in ("expired", "used"):
-            removed.append(url)
-            append_used(url)
-        if (i + 1) % 5 == 0:
-            await msg.edit(content=f"⏳ Đang quét: `{i+1}/{len(links)}` | ✅ Fresh: `{len(fresh)}` | ❌ Xóa: `{len(removed)}`")
-        await asyncio.sleep(0.8)
+    sem = asyncio.Semaphore(25)
+    loop = asyncio.get_event_loop()
+
+    async def scan_single(url: str):
+        nonlocal done_count
+        async with sem:
+            status = await loop.run_in_executor(None, check_link_status, url, 4)
+            done_count += 1
+            if status == "fresh":
+                fresh.append(url)
+            elif status in ("expired", "used"):
+                removed.append(url)
+                append_used(url)
+
+    # Vòng lặp cập nhật tin nhắn riêng biệt (Tránh triệt để Discord Rate Limit)
+    async def progress_reporter():
+        while not scan_done:
+            await asyncio.sleep(2.0)
+            if scan_done:
+                break
+            pct = int((done_count / total) * 100) if total else 0
+            try:
+                await msg.edit(
+                    content=f"⚡ Đang quét siêu tốc: `{done_count}/{total}` link ({pct}%) | 🟢 Còn sống: `{len(fresh)}` | 🔴 Hỏng/Đã dùng: `{len(removed)}`"
+                )
+            except Exception:
+                pass
+
+    reporter_task = asyncio.create_task(progress_reporter())
+
+    try:
+        await asyncio.gather(*(scan_single(u) for u in links))
+    finally:
+        scan_done = True
+        reporter_task.cancel()
 
     kept = [u for u in links if u not in removed]
     write_links(LINKS_FILE, kept)
@@ -291,11 +328,14 @@ async def do_quick_scan(ctx):
     fresh_pool = fresh[:]
     is_scanning = False
 
-    embed = discord.Embed(title="✅ Quét xong!", color=0x22c55e, timestamp=datetime.utcnow())
-    embed.add_field(name="🟢 Fresh giữ lại", value=f"`{len(fresh)}`",   inline=True)
-    embed.add_field(name="🔴 Đã xóa",        value=f"`{len(removed)}`", inline=True)
-    embed.add_field(name="📦 Còn trong kho",  value=f"`{len(kept)}`",   inline=True)
-    await msg.edit(content=None, embed=embed)
+    embed = discord.Embed(title="✅ Đã quét xong toàn bộ!", color=0x22c55e, timestamp=datetime.utcnow())
+    embed.add_field(name="🟢 Link sống (Fresh)",    value=f"`{len(fresh)}`",   inline=True)
+    embed.add_field(name="🔴 Đã xóa (Hỏng/Dùng)",   value=f"`{len(removed)}`", inline=True)
+    embed.add_field(name="📦 Tổng còn trong kho",   value=f"`{len(kept)}`",   inline=True)
+    try:
+        await msg.edit(content=None, embed=embed)
+    except Exception:
+        await ctx.send(embed=embed)
     log(f"[SCAN-CMD] Fresh: {len(fresh)} | Xoa: {len(removed)}")
 
 @bot.command(name="help", aliases=["h"])
@@ -313,16 +353,29 @@ async def cmd_help(ctx):
 @bot.event
 async def on_ready():
     log(f"[BOT] Da dang nhap: {bot.user} (ID: {bot.user.id})")
-    log(f"[BOT] Links hien tai: {len(read_links(LINKS_FILE))}")
+    reload_fresh_pool()
+    total = len(read_links(LINKS_FILE))
+    log(f"[BOT] San sang hoat dong! Kho link: {total}")
     background_scan.start()
     await bot.change_presence(
-        activity=discord.Activity(type=discord.ActivityType.watching, name="Gemini links | !help")
+        activity=discord.Activity(type=discord.ActivityType.watching, name=f"{total} links | !help")
     )
+    print("\n" + "=" * 60)
+    print(f"   [OK] BOT AUTOGEMINI ĐÃ ONLINE VÀ SẴN SÀNG!")
+    print(f"   [*] Kho link hiện có: {total} links")
+    print("   [*] Bot đang chờ nhận lệnh trực tiếp từ Discord:")
+    print("       !get   -> Lấy ngay 1 link fresh")
+    print("       !check -> Bắt đầu quét và hiển thị tiến độ trên Discord")
+    print("       !stats -> Xem thống kê link")
+    print("=" * 60 + "\n")
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
+
+    if message.content.startswith("!"):
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] Nhận lệnh '{message.content}' từ {message.author} trên Discord")
 
     # 1. Kiem tra xem nguoi dung co gui file .txt khong
     if message.attachments:
