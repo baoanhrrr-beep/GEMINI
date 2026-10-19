@@ -2,7 +2,7 @@
 sync_cloud_links.py
 Tự động đồng bộ và gom tất cả link kích hoạt mới từ 5 máy chủ Cloud GitHub
 về thẳng file gemini_activation_links.txt trên máy tính của bạn.
-Chạy ngầm liên tục 24/24 - Cứ có link mới trên Cloud là tự kéo về máy ngay lập tức!
+CÓ BỘ LỌC CHỐNG LINK CŨ / LINK ĐÃ DÙNG (GEMINI_LINKS_USED.TXT).
 """
 
 import time
@@ -14,8 +14,9 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 import requests
 
-LOCAL_FILE = Path(r"c:\Users\k5a3h\Downloads\GEMINI jino Tool\gemini_activation_links.txt")
+LOCAL_FILE  = Path(r"c:\Users\k5a3h\Downloads\GEMINI jino Tool\gemini_activation_links.txt")
 LOCAL_FRESH = Path(r"c:\Users\k5a3h\Downloads\GEMINI jino Tool\gemini_links_fresh.txt")
+LOCAL_USED  = Path(r"c:\Users\k5a3h\Downloads\GEMINI jino Tool\gemini_links_used.txt")
 
 # 5 Tài khoản Cloud GitHub đã thiết lập
 CLOUD_ACCOUNTS = {
@@ -29,6 +30,19 @@ CLOUD_ACCOUNTS = {
 POLL_INTERVAL_SECONDS = 30  # Kiểm tra các máy chủ Cloud mỗi 30 giây
 
 
+def get_token(url: str) -> str:
+    return url.split("?")[0].rstrip("/").split("/")[-1].strip()
+
+
+def get_used_info() -> tuple[set[str], set[str]]:
+    if not LOCAL_USED.exists():
+        return set(), set()
+    used_lines = [l.strip() for l in LOCAL_USED.read_text(encoding="utf-8").splitlines() if l.strip()]
+    used_urls = set(used_lines)
+    used_tokens = set(get_token(u) for u in used_lines)
+    return used_urls, used_tokens
+
+
 def get_local_links() -> set[str]:
     if not LOCAL_FILE.exists():
         return set()
@@ -39,7 +53,17 @@ def append_local_links(new_links: list[str]) -> None:
     if not new_links:
         return
     existing = get_local_links()
-    to_add = [l for l in new_links if l not in existing]
+    used_urls, used_tokens = get_used_info()
+
+    # CHỈ LẤY LINK THỰC SỰ MỚI VÀ CHƯA TỪNG BỊ ĐƯA VÀO USED LIST
+    to_add = []
+    seen = set()
+    for l in new_links:
+        tok = get_token(l)
+        if l not in existing and l not in used_urls and tok not in used_tokens and l not in seen:
+            to_add.append(l)
+            seen.add(l)
+
     if not to_add:
         return
 
@@ -52,10 +76,10 @@ def append_local_links(new_links: list[str]) -> None:
             f.write(l + "\n")
 
     print(f"\n{'='*70}")
-    print(f"[ĐÃ KÉO VỀ MÁY] +{len(to_add)} LINK MỚI TỪ CLOUD!")
+    print(f"[ĐÃ KÉO VỀ MÁY] +{len(to_add)} LINK MỚI TINH TỪ CLOUD (Đã tự lọc bỏ link cũ/đã dùng)!")
     for l in to_add:
         print(f"  -> {l[:85]}...")
-    print(f"Tổng số link hiện có trong file: {len(existing) + len(to_add)}")
+    print(f"Tổng số link fresh hiện có trong file: {len(existing) + len(to_add)}")
     print(f"{'='*70}\n")
 
 
@@ -82,6 +106,7 @@ def main():
     print("   HỆ THỐNG ĐỒNG BỘ LINK CLOUD VỀ MÁY TÍNH (CLOUD LINK SYNC)")
     print("   Theo dõi liên tục 5 máy chủ GitHub Cloud 24/24")
     print(f"   Đích lưu: {LOCAL_FILE.name}")
+    print("   Tự động lọc bỏ 100% link cũ / đã hết hạn!")
     print("=" * 70)
 
     loop = 0
