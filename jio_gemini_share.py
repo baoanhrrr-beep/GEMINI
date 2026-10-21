@@ -413,6 +413,24 @@ FIREBASE_PANELS = [
     ("https://masterbot-2-default-rtdb.firebaseio.com", "https://masterbot-2-default-rtdb.firebaseio.com"),
 ]
 
+EXTRA_PANELS_FILE = Path("extra_panels.txt")
+
+def get_all_panels() -> list[tuple[str, str]]:
+    panels = list(FIREBASE_PANELS)
+    if EXTRA_PANELS_FILE.exists():
+        try:
+            known = {p[0] for p in panels}
+            for line in EXTRA_PANELS_FILE.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("http"):
+                    url = line.split()[0].rstrip("/")
+                    if url not in known:
+                        panels.append((url, url))
+                        known.add(url)
+        except Exception:
+            pass
+    return panels
+
 MESSAGE_SCAN_LIMIT = 15
 OTP_TIMEOUT = 30
 POLL_INTERVAL = 1
@@ -692,10 +710,11 @@ def get_activation(session: requests.Session) -> tuple[str, str]:
         url = activation_url(str(google_data.get("redirectionURL", "")))
         if not url:
             return "no_activation_url", ""
-        try:
-            session.get(SUBMIT_URL, headers=offer_headers, timeout=20)
-        except requests.RequestException:
-            pass
+        # KHONG goi SUBMIT_URL de giu link song toi da 24-48 gio, khong bi Jio huy som
+        # try:
+        #     session.get(SUBMIT_URL, headers=offer_headers, timeout=20)
+        # except requests.RequestException:
+        #     pass
         return "activation_url_found", url
     except requests.RequestException:
         return "activation_api_failed", ""
@@ -1063,18 +1082,20 @@ def save_link(url: str) -> None:
                         print(f"   [SKIP] Token da trong used list -> bo qua")
                         return
                 if LINKS_FILE.exists():
-                    existing = set(LINKS_FILE.read_text(encoding="utf-8").splitlines())
-                    if url in existing:
+                    existing_tokens = {
+                        u.split("?")[0].rstrip("/").split("/")[-1].strip()
+                        for u in LINKS_FILE.read_text(encoding="utf-8").splitlines() if u.strip()
+                    }
+                    if token in existing_tokens:
                         print(f"   [SKIP] Link da ton tai -> bo qua")
                         return
             break
         except Exception:
             time.sleep(0.1)
 
-    # LUU THANG - KHONG MO TRANG AN DANH (TOC DO TOI DA)
+    # LUU THANG VAO KHO DE COC COC CHECK (KHONG LUU FRESH KHI CHUA CHECK)
     print(f"   [THÀNH CÔNG] LƯU LINK MỚI -> {url}")
     _append_unique(LINKS_FILE, url)
-    _append_unique(LINKS_FRESH_FILE, url)
 
     # Neu dang chay tren GitHub Actions -> day ngay ve GitHub de may tinh o nha keo ve tuc thi!
     if os.environ.get("GITHUB_ACTIONS") == "true":
@@ -1114,8 +1135,9 @@ def save_result(serial: int | str, device_id: str, mobile: str, status: str, url
 
 def main() -> int:
     t_start = time.time()
+    all_panels = get_all_panels()
     print("=" * 70)
-    print(f"BƯỚC 1: Quét {len(FIREBASE_PANELS)} panels song song (100 luồng)...")
+    print(f"BƯỚC 1: Quét {len(all_panels)} panels song song (100 luồng)...")
     print("=" * 70)
     t0 = time.time()
     
@@ -1151,7 +1173,7 @@ def main() -> int:
             pass
 
     import random
-    panel_items = list(enumerate(FIREBASE_PANELS, start=1))
+    panel_items = list(enumerate(all_panels, start=1))
     random.shuffle(panel_items)  # Xao tron de khi mo nhieu CMD, moi CMD quet cac panel khac nhau
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
